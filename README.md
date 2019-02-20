@@ -41,19 +41,22 @@ information on commercial licensing, please contact the authors at the
 contact address below. If you use this code for a publication, please
 consider citing the following papers:
 
-    @inproceedings{SCPS2019,
-	  	title={Semi-Calibrated Photometric Stereo},
-	  	author={DongHyeon Cho, Yasuyuki Matsushita, Yu-Wing Tai, and In So Kweon},
-	  	journal={IEEE Transactions on Pattern Analysis and Machine Intelligence (TPAMI)},
-	  	year={2018}
-	}
-	    @inproceedings{RPS2010,
-	  	title={Robust Photometric Stereo via Low-Rank Matrix Completion and Recovery},
-	  	author={Lun Wu, Arvind Ganesh, Boxin Shi, Yasuyuki Matsushita, Yongtian Wang, and Yi Ma},
-	  	booktitle={Proceedings of Asian Conference on Computer Vision (ACCV)},
-	  	year={2010}
+    @inproceedings{SCPS2018,
+        title   = {Semi-Calibrated Photometric Stereo},
+        author  = {DongHyeon Cho, Yasuyuki Matsushita, Yu-Wing Tai, and In So Kweon},
+        journal = {IEEE Transactions on Pattern Analysis and Machine Intelligence (TPAMI)},
+        year    = {2018}
 	}
 	
+	@inproceedings{SCPS2016,
+	    title     = {Photometric Stereo Under Non-uniform Light Intensities and Exposures},
+	    author    = {Donghyeon Cho, Yasuyuki Matsushita, Yu-Wing Tai, and In So Kweon},
+        booktitle = {European Conference on Computer Vision (ECCV)},
+        year      = {2016},
+        volume    = {II},
+        pages     = {170--186}
+    }  
+
 	
 ### Dependencies
 The code is written in Python 3.6 but should be able to adapt it to Python 2.x if needed.
