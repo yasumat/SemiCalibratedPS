@@ -12,7 +12,7 @@ import numpy as np
 from scipy import sparse as sp
 from scipy.sparse.linalg import svds
 from sklearn.preprocessing import normalize
-from RobustPhotometricStereo import rpsutil
+import psutil
 
 
 class SCPS(object):
@@ -23,8 +23,10 @@ class SCPS(object):
     """
     # Choice of solution methods
     LINEAR = 0    # Linear solution method
-    TMP = 1    # tmp
+    FACTORIZATION = 1    # Factorization based method
     ALTERNATE = 2    # Alternating minimization method
+
+    SN_DIM = 3    # Surface normal dimension
 
     def __init__(self):
         self.M = None   # measurement matrix in numpy array
@@ -47,8 +49,7 @@ class SCPS(object):
 
         :param filename: filename of lights.txt
         """
-        self.L = rpsutil.load_lighttxt(filename)
-        self.L = self.L.T
+        self.L = psutil.load_lighttxt(filename).T
 
     def load_lightnpy(self, filename=None):
         """
@@ -61,8 +62,7 @@ class SCPS(object):
 
         :param filename: filename of lights.npy
         """
-        self.L = rpsutil.load_lightnpy(filename)
-        self.L = self.L.T
+        self.L = psutil.load_lightnpy(filename).T
 
     def load_images(self, foldername=None, ext=None):
         """
@@ -70,7 +70,7 @@ class SCPS(object):
         :param foldername: foldername
         :param ext: file extension
         """
-        self.M, self.height, self.width = rpsutil.load_images(foldername, ext)
+        self.M, self.height, self.width = psutil.load_images(foldername, ext)
         self.M = self.M.T
 
     def load_npyimages(self, foldername=None):
@@ -78,7 +78,7 @@ class SCPS(object):
         Load images in the folder specified by the "foldername" in the numpy format
         :param foldername: foldername
         """
-        self.M, self.height, self.width = rpsutil.load_npyimages(foldername)
+        self.M, self.height, self.width = psutil.load_npyimages(foldername)
         self.M = self.M.T
 
     def load_mask(self, filename=None):
@@ -90,8 +90,7 @@ class SCPS(object):
         """
         if filename is None:
             raise ValueError("filename is None")
-        mask = rpsutil.load_image(filename=filename)
-        mask = mask.T
+        mask = psutil.load_image(filename=filename)
         mask = mask.reshape((-1, 1))
         self.foreground_ind = np.where(mask != 0)[0]
         self.background_ind = np.where(mask == 0)[0]
@@ -101,7 +100,7 @@ class SCPS(object):
         Visualize normal map
         :return: None
         """
-        rpsutil.disp_normalmap(normal=self.N, height=self.height, width=self.width, delay=delay)
+        psutil.disp_normalmap(normal=self.N, height=self.height, width=self.width, delay=delay)
 
     def save_normalmap(self, filename=None):
         """
@@ -109,7 +108,7 @@ class SCPS(object):
         :param filename: filename of a normal map
         :return: None
         """
-        rpsutil.save_normalmap_as_npy(filename=filename, normal=self.N, height=self.height, width=self.width)
+        psutil.save_normalmap_as_npy(filename=filename, normal=self.N, height=self.height, width=self.width)
 
     def solve(self, method=LINEAR):
         if self.M is None:
@@ -121,6 +120,8 @@ class SCPS(object):
 
         if method == SCPS.LINEAR:
             self._solve_linear()
+        elif method == SCPS.FACTORIZATION:
+            self._solve_factorization()
         elif method == SCPS.ALTERNATE:
             self._solve_alternate()
         else:
@@ -128,24 +129,49 @@ class SCPS(object):
 
     def _solve_linear(self):
         f, p = self.M.shape
-        Ip = sp.identity(p)
-        Dl = sp.kron(-Ip, self.L)
+        Dl = sp.kron(-sp.identity(p), self.L)
         Drt = sp.lil_matrix((f, p*f))
         for i in range(p):
             Drt.setdiag(self.M[:, i], k=i*f)
         D = sp.hstack([Dl, Drt.T])
-        u, s, vt = sp.linalg.svds(D, k=2)
-        print(s)
-        print(u)
-        print(p, f)
+        u, s, vt = sp.linalg.svds(D, k=1, which='SM')    # Compute 1D (primary) null space of D
+        null_space = vt.T.ravel()
+        self.N = np.reshape(null_space[:self.SN_DIM*p], (p, self.SN_DIM)).T
+        self.N = normalize(self.N, axis=0)
+        self.E = np.diag(null_space[self.SN_DIM*p:])
+        return
+
+    def _solve_factorization(self):
+        # Step 1 factorize (uncalibrated photometric stereo step)
+        f = self.M.shape[0]
+        u, s, vt = np.linalg.svd(self.M, full_matrices=False)
+        u = u[:, :self.SN_DIM]
+        s = s[:self.SN_DIM]
+        vt = vt[:self.SN_DIM, :]
+        S_hat = u @ np.diag(np.sqrt(s))
+        Bt_hat = np.diag(np.sqrt(s)) @ vt
+        # Step 2 solve for ambiguity H
+        A = np.zeros((2*f, self.SN_DIM * self.SN_DIM))
+        for i in range(f):
+            s = S_hat[i, :]
+            A[2*i, :] = np.hstack([np.zeros(self.SN_DIM), -self.L[i, 2] * s, self.L[i, 1] * s])
+            A[2*i+1, :] = np.hstack([self.L[i, 2] * s, np.zeros(self.SN_DIM), -self.L[i, 0] * s])
+        u, s, vt = np.linalg.svd(A, full_matrices=True)
+        H = np.reshape(vt[-1, :], (self.SN_DIM, self.SN_DIM))
+        self.N = H @ Bt_hat
+        self.N = normalize(self.N, axis=0)
+        S_hat = S_hat @ np.linalg.inv(H)
+        self.E = np.identity(f)
+        for i in range(f):
+            self.E[i, i] = np.linalg.norm(S_hat[i, :])
         return
 
     def _solve_alternate(self):
         """
         Derive solution by alternating minimization
         """
-        max_iter = 100
-        tol = 1.0e-6
+        max_iter = 100    # can be changed
+        tol = 1.0e-6    # can be changed
         f = self.L.shape[0]
         self.E = np.identity(f)
         E_old = np.zeros((f, f))

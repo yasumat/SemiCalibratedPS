@@ -5,13 +5,14 @@ sys.path.append("..")   # Adds higher directory to python modules path.
 
 import numpy as np
 import time
-from RobustPhotometricStereo import rpsutil
+import psutil
 from scps import SCPS
 import cv2
 
 
 # Choose a method
-METHOD = SCPS.LINEAR    # Linear solution method
+#METHOD = SCPS.LINEAR    # Linear solution method
+METHOD = SCPS.FACTORIZATION    # Factorization based method
 #METHOD = SCPS.ALTERNATE    # Alternating minimization method
 
 DATA_FOLDERNAME = '../RobustPhotometricStereo/data/bunny/bunny_lambert/'
@@ -29,4 +30,4 @@ elapsed_time = time.time() - start
 print("Semi-Calibrated Photometric Stereo: elapsed_time:{0}".format(elapsed_time) + "[sec]")
 print(scps.E)
 #scps.save_normalmap(filename="./est_normal")    # Save the estimated normal map
-#rpsutil.disp_normalmap(normal=scps.N.T, height=scps.height, width=scps.width)
+psutil.disp_normalmap(normal=scps.N.T, height=scps.height, width=scps.width)
