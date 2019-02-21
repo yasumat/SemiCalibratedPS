@@ -127,24 +127,58 @@ class SCPS(object):
         else:
             raise ValueError("Undefined solver")
 
+    def _solve_conventional(self):
+        """
+        Lambertian Photometric stereo based on least-squares
+        Woodham 1980
+        :return: None
+
+        Compute surface normal : numpy array of surface normal (p \times 3)
+        """
+        self.N = np.linalg.lstsq(self.L, self.M, rcond=None)[0]
+        self.N = normalize(self.N, axis=1)  # normalize to account for diffuse reflectance
+        if self.background_ind is not None:
+            for i in range(self.N.shape[1]):
+                self.N[self.background_ind, i] = 0
+
     def _solve_linear(self):
-        f, p = self.M.shape
+        """
+        Semi-calibrated photometric stereo
+        solution method based on null space (linear)
+        """
+        self.N = np.zeros((self.SN_DIM, self.M.shape[1]))
+        if self.foreground_ind is None:
+            indices = range(self.M.shape[0])
+        else:
+            indices = self.foreground_ind
+        M = self.M[:, indices]
+        f, p = M.shape
         Dl = sp.kron(-sp.identity(p), self.L)
         Drt = sp.lil_matrix((f, p*f))
         for i in range(p):
-            Drt.setdiag(self.M[:, i], k=i*f)
+            Drt.setdiag(M[:, i], k=i*f)
         D = sp.hstack([Dl, Drt.T])
         u, s, vt = sp.linalg.svds(D, k=1, which='SM')    # Compute 1D (primary) null space of D
         null_space = vt.T.ravel()
-        self.N = np.reshape(null_space[:self.SN_DIM*p], (p, self.SN_DIM)).T
-        self.N = normalize(self.N, axis=0)
+        self.N[:, indices] = np.reshape(null_space[:self.SN_DIM*p], (p, self.SN_DIM)).T
+        self.N[:, indices] = normalize(self.N[:, indices], axis=0)
         self.E = np.diag(null_space[self.SN_DIM*p:])
         return
 
     def _solve_factorization(self):
+        """
+        Semi-calibrated photometric stereo
+        solution method based on factorization
+        """
+        self.N = np.zeros((self.SN_DIM, self.M.shape[1]))
+        if self.foreground_ind is None:
+            indices = range(self.M.shape[0])
+        else:
+            indices = self.foreground_ind
+        M = self.M[:, indices]
         # Step 1 factorize (uncalibrated photometric stereo step)
-        f = self.M.shape[0]
-        u, s, vt = np.linalg.svd(self.M, full_matrices=False)
+        f = M.shape[0]
+        u, s, vt = np.linalg.svd(M, full_matrices=False)
         u = u[:, :self.SN_DIM]
         s = s[:self.SN_DIM]
         vt = vt[:self.SN_DIM, :]
@@ -156,11 +190,13 @@ class SCPS(object):
             s = S_hat[i, :]
             A[2*i, :] = np.hstack([np.zeros(self.SN_DIM), -self.L[i, 2] * s, self.L[i, 1] * s])
             A[2*i+1, :] = np.hstack([self.L[i, 2] * s, np.zeros(self.SN_DIM), -self.L[i, 0] * s])
-        u, s, vt = np.linalg.svd(A, full_matrices=True)
+        u, s, vt = np.linalg.svd(A, full_matrices=False)
         H = np.reshape(vt[-1, :], (self.SN_DIM, self.SN_DIM))
-        self.N = H @ Bt_hat
-        self.N = normalize(self.N, axis=0)
+        self.N[:, indices] = H @ Bt_hat
         S_hat = S_hat @ np.linalg.inv(H)
+        self.N[:, indices] = normalize(self.N[:, indices], axis=0)
+        if np.mean(self.N[2, indices]) < 0.0:    # flip in case surface normal looks backward
+            self.N *= -1
         self.E = np.identity(f)
         for i in range(f):
             self.E[i, i] = np.linalg.norm(S_hat[i, :])
@@ -168,20 +204,27 @@ class SCPS(object):
 
     def _solve_alternate(self):
         """
-        Derive solution by alternating minimization
+        Semi-calibrated photometric stereo
+        solution method based on alternating minimization
         """
         max_iter = 100    # can be changed
         tol = 1.0e-6    # can be changed
-        f = self.L.shape[0]
+        self.N = np.zeros((self.SN_DIM, self.M.shape[1]))
+        if self.foreground_ind is None:
+            indices = range(self.M.shape[0])
+        else:
+            indices = self.foreground_ind
+        M = self.M[:, indices]
+        f = M.shape[0]
         self.E = np.identity(f)
         E_old = np.zeros((f, f))
         for iter in range(max_iter):
             # Step 1 : Solve for N
-            self.N = np.linalg.lstsq(self.E @ self.L, self.M, rcond=None)[0]
+            N = np.linalg.lstsq(self.E @ self.L, M, rcond=None)[0]
             # Step 2 : Solve for E
-            LN = self.L @ self.N
+            LN = self.L @ N
             for i in range(self.E.shape[0]):
-                self.E[i, i] = (LN[i, :] @ self.M[i, :]) / (LN[i, :] @ LN[i, :])
+                self.E[i, i] = (LN[i, :] @ M[i, :]) / (LN[i, :] @ LN[i, :])
             # normalize E
             self.E /= np.linalg.norm(self.E)
             if np.linalg.norm(self.E - E_old) < tol:
@@ -189,6 +232,6 @@ class SCPS(object):
             else:
                 E_old = self.E
         # normalize N
-        self.N = normalize(self.N, axis=0)
+        self.N[:, indices] = normalize(N, axis=0)
         return
 
