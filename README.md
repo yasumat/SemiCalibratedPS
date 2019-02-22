@@ -71,11 +71,9 @@ You might need the following Python packages installed:
 This code implementation work is supported by Osaka University and JSPS KAKENHI Grant
 Number JP16H01732, Japan.
 
-
 ### Contact information
 
 Questions / Comments? Bug reports? Please contact Yasuyuki Matsushita at yasumat@ist.osaka-u.ac.jp.
-
 
 ### References
 

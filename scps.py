@@ -3,6 +3,24 @@
 
 """
 Semi-Calibrated Photometric Stereo in Python
+
+Please refer to the following papers for algorithmic details.
+
+    @inproceedings{SCPS2018,
+        title   = {Semi-Calibrated Photometric Stereo},
+        author  = {DongHyeon Cho, Yasuyuki Matsushita, Yu-Wing Tai, and In So Kweon},
+        journal = {IEEE Transactions on Pattern Analysis and Machine Intelligence (TPAMI)},
+        year    = {2018}
+	}
+
+	@inproceedings{SCPS2016,
+	    title     = {Photometric Stereo Under Non-uniform Light Intensities and Exposures},
+	    author    = {Donghyeon Cho, Yasuyuki Matsushita, Yu-Wing Tai, and In So Kweon},
+        booktitle = {European Conference on Computer Vision (ECCV)},
+        year      = {2016},
+        volume    = {II},
+        pages     = {170--186}
+    }
 """
 __author__ = "Yasuyuki Matsushita <yasumat@ist.osaka-u.ac.jp>"
 __version__ = "0.1.0"
@@ -127,20 +145,6 @@ class SCPS(object):
         else:
             raise ValueError("Undefined solver")
 
-    def _solve_conventional(self):
-        """
-        Lambertian Photometric stereo based on least-squares
-        Woodham 1980
-        :return: None
-
-        Compute surface normal : numpy array of surface normal (p \times 3)
-        """
-        self.N = np.linalg.lstsq(self.L, self.M, rcond=None)[0]
-        self.N = normalize(self.N, axis=1)  # normalize to account for diffuse reflectance
-        if self.background_ind is not None:
-            for i in range(self.N.shape[1]):
-                self.N[self.background_ind, i] = 0
-
     def _solve_linear(self):
         """
         Semi-calibrated photometric stereo
@@ -188,8 +192,8 @@ class SCPS(object):
         A = np.zeros((2*f, self.SN_DIM * self.SN_DIM))
         for i in range(f):
             s = S_hat[i, :]
-            A[2*i, :] = np.hstack([np.zeros(self.SN_DIM), -self.L[i, 2] * s, self.L[i, 1] * s])
-            A[2*i+1, :] = np.hstack([self.L[i, 2] * s, np.zeros(self.SN_DIM), -self.L[i, 0] * s])
+            A[2 * i, :] = np.hstack([np.zeros(self.SN_DIM), -self.L[i, 2] * s, self.L[i, 1] * s])
+            A[2 * i + 1, :] = np.hstack([self.L[i, 2] * s, np.zeros(self.SN_DIM), -self.L[i, 0] * s])
         u, s, vt = np.linalg.svd(A, full_matrices=False)
         H = np.reshape(vt[-1, :], (self.SN_DIM, self.SN_DIM))
         self.N[:, indices] = H @ Bt_hat
@@ -207,8 +211,8 @@ class SCPS(object):
         Semi-calibrated photometric stereo
         solution method based on alternating minimization
         """
-        max_iter = 100    # can be changed
-        tol = 1.0e-6    # can be changed
+        max_iter = 1000   # can be changed
+        tol = 1.0e-8    # can be changed
         self.N = np.zeros((self.SN_DIM, self.M.shape[1]))
         if self.foreground_ind is None:
             indices = range(self.M.shape[0])
@@ -217,7 +221,7 @@ class SCPS(object):
         M = self.M[:, indices]
         f = M.shape[0]
         self.E = np.identity(f)
-        E_old = np.zeros((f, f))
+        N_old = np.zeros((self.SN_DIM, M.shape[1]))
         for iter in range(max_iter):
             # Step 1 : Solve for N
             N = np.linalg.lstsq(self.E @ self.L, M, rcond=None)[0]
@@ -227,10 +231,10 @@ class SCPS(object):
                 self.E[i, i] = (LN[i, :] @ M[i, :]) / (LN[i, :] @ LN[i, :])
             # normalize E
             self.E /= np.linalg.norm(self.E)
-            if np.linalg.norm(self.E - E_old) < tol:
+            if np.linalg.norm(N - N_old) < tol:
                 break
             else:
-                E_old = self.E
+                N_old = N
         # normalize N
         self.N[:, indices] = normalize(N, axis=0)
         return
