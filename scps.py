@@ -11,11 +11,11 @@ Please refer to the following papers for algorithmic details.
         author  = {DongHyeon Cho, Yasuyuki Matsushita, Yu-Wing Tai, and In So Kweon},
         journal = {IEEE Transactions on Pattern Analysis and Machine Intelligence (TPAMI)},
         year    = {2018}
-	}
+    }
 
-	@inproceedings{SCPS2016,
-	    title     = {Photometric Stereo Under Non-uniform Light Intensities and Exposures},
-	    author    = {Donghyeon Cho, Yasuyuki Matsushita, Yu-Wing Tai, and In So Kweon},
+    @inproceedings{SCPS2016,
+        title     = {Photometric Stereo Under Non-uniform Light Intensities and Exposures},
+        author    = {Donghyeon Cho, Yasuyuki Matsushita, Yu-Wing Tai, and In So Kweon},
         booktitle = {European Conference on Computer Vision (ECCV)},
         year      = {2016},
         volume    = {II},
@@ -44,7 +44,7 @@ class SCPS(object):
     FACTORIZATION = 1    # Factorization based method
     ALTERNATE = 2    # Alternating minimization method
 
-    SN_DIM = 3    # Surface normal dimension
+    SN_DIM = 3    # Surface normal dimension (because we live in the 3D space)
 
     def __init__(self):
         self.M = None   # measurement matrix in numpy array
@@ -156,20 +156,62 @@ class SCPS(object):
         else:
             indices = self.foreground_ind
         M = self.M[:, indices]
+        # Look at pixels that are illuminated under ALL the illuminations
+        illum_ind = np.where(np.min(M, axis=0) > 0.0)[0]
         f, p = M.shape
         Dl = sp.kron(-sp.identity(p), self.L)
         Drt = sp.lil_matrix((f, p*f))
-        for i in range(p):
-            Drt.setdiag(M[:, i], k=i*f)
+        for i in range(len(illum_ind)):
+            Drt.setdiag(M[:, illum_ind[i]], k=i*f)
         D = sp.hstack([Dl, Drt.T])
         u, s, vt = sp.linalg.svds(D, k=1, which='SM')    # Compute 1D (primary) null space of D
         null_space = vt.T.ravel()
-        self.N[:, indices] = np.reshape(null_space[:self.SN_DIM*p], (p, self.SN_DIM)).T
+        self.E = np.diag(1.0 / null_space[self.SN_DIM * p:])
+        if np.mean(self.E) < 0.0:    # flip if light intensities are negative
+            self.E *= -1.0
+        self.N = np.linalg.lstsq(self.E @ self.L, self.M, rcond=None)[0]
+        # The above operation is almost equivalent to obtaining the solution from the null space
+        # self.N[:, indices] = np.reshape(null_space[:self.SN_DIM*p], (p, self.SN_DIM)).T
+        # However, the null space method may be contaminated by attached shadows.
         self.N[:, indices] = normalize(self.N[:, indices], axis=0)
-        self.E = np.diag(null_space[self.SN_DIM*p:])
         return
 
     def _solve_factorization(self):
+        """
+        Semi-calibrated photometric stereo
+        solution method based on factorization
+        """
+        self.N = np.zeros((self.SN_DIM, self.M.shape[1]))
+        if self.foreground_ind is None:
+            indices = range(self.M.shape[0])
+        else:
+            indices = self.foreground_ind
+        M = self.M[:, indices]
+        # Look at pixels that are illuminated under ALL the illuminations
+        illum_ind = np.where(np.min(M, axis=0) > 0.0)[0]
+        # Step 1 factorize (uncalibrated photometric stereo step)
+        f = M.shape[0]
+        u, s, vt = np.linalg.svd(M[:, illum_ind], full_matrices=False)
+        u = u[:, :self.SN_DIM]
+        s = s[:self.SN_DIM]
+        S_hat = u @ np.diag(np.sqrt(s))
+        # Step 2 solve for ambiguity H
+        A = np.zeros((2 * f, self.SN_DIM * self.SN_DIM))
+        for i in range(f):
+            s = S_hat[i, :]
+            A[2 * i, :] = np.hstack([np.zeros(self.SN_DIM), -self.L[i, 2] * s, self.L[i, 1] * s])
+            A[2 * i + 1, :] = np.hstack([self.L[i, 2] * s, np.zeros(self.SN_DIM), -self.L[i, 0] * s])
+        u, s, vt = np.linalg.svd(A, full_matrices=False)
+        H = np.reshape(vt[-1, :], (self.SN_DIM, self.SN_DIM)).T
+        S_hat = S_hat @ H
+        self.E = np.identity(f)
+        for i in range(f):
+            self.E[i, i] = np.linalg.norm(S_hat[i, :])
+        self.N = np.linalg.lstsq(self.E @ self.L, self.M, rcond=None)[0]
+        self.N[:, indices] = normalize(self.N[:, indices], axis=0)
+        return
+
+    def _solve_factorization_orig(self):
         """
         Semi-calibrated photometric stereo
         solution method based on factorization
@@ -195,15 +237,15 @@ class SCPS(object):
             A[2 * i, :] = np.hstack([np.zeros(self.SN_DIM), -self.L[i, 2] * s, self.L[i, 1] * s])
             A[2 * i + 1, :] = np.hstack([self.L[i, 2] * s, np.zeros(self.SN_DIM), -self.L[i, 0] * s])
         u, s, vt = np.linalg.svd(A, full_matrices=False)
-        H = np.reshape(vt[-1, :], (self.SN_DIM, self.SN_DIM))
-        self.N[:, indices] = H @ Bt_hat
-        S_hat = S_hat @ np.linalg.inv(H)
+        H = np.reshape(vt[-1, :], (self.SN_DIM, self.SN_DIM)).T
+        self.N[:, indices] = np.linalg.inv(H) @ Bt_hat
+        S_hat = S_hat @ H
         self.N[:, indices] = normalize(self.N[:, indices], axis=0)
-        if np.mean(self.N[2, indices]) < 0.0:    # flip in case surface normal looks backward
-            self.N *= -1
         self.E = np.identity(f)
         for i in range(f):
             self.E[i, i] = np.linalg.norm(S_hat[i, :])
+        if np.mean(self.N[2, indices]) < 0.0:    # flip in case surface normal looks backward
+            self.N *= -1.0
         return
 
     def _solve_alternate(self):
@@ -219,23 +261,25 @@ class SCPS(object):
         else:
             indices = self.foreground_ind
         M = self.M[:, indices]
+        # Look at pixels that are illuminated under ALL the illuminations
+        illum_ind = np.where(np.min(M, axis=0) > 0.0)[0]
         f = M.shape[0]
-        self.E = np.identity(f)
+        self.E = np.ones(f)
         N_old = np.zeros((self.SN_DIM, M.shape[1]))
         for iter in range(max_iter):
             # Step 1 : Solve for N
-            N = np.linalg.lstsq(self.E @ self.L, M, rcond=None)[0]
+            N = np.linalg.lstsq(np.diag(self.E) @ self.L, M, rcond=None)[0]
             # Step 2 : Solve for E
-            LN = self.L @ N
-            for i in range(self.E.shape[0]):
-                self.E[i, i] = (LN[i, :] @ M[i, :]) / (LN[i, :] @ LN[i, :])
+            LN = self.L @ N[:, illum_ind]
+            for i in range(f):
+                self.E[i] = (LN[i, :] @ M[i, illum_ind]) / (LN[i, :] @ LN[i, :])
             # normalize E
             self.E /= np.linalg.norm(self.E)
             if np.linalg.norm(N - N_old) < tol:
                 break
             else:
                 N_old = N
-        # normalize N
-        self.N[:, indices] = normalize(N, axis=0)
+        self.N[:, indices] = normalize(N, axis=0)    # normalize N
+        self.E = np.diag(self.E)     # convert to a diagonal matrix
         return
 
