@@ -36,20 +36,20 @@ def plot_light_intensities(ground_truth=None, estimated=None):
 
 
 if __name__=='__main__':
-    # Choose a method (my recommendation is SCPS.ALTERNATE)
-    METHOD = SCPS.LINEAR    # Linear solution method
+    # Choose a method
+    #METHOD = SCPS.LINEAR    # Linear solution method
     #METHOD = SCPS.FACTORIZATION    # Factorization based method
-    #METHOD = SCPS.ALTERNATE    # Alternating minimization method
+    METHOD = SCPS.ALTERNATE    # Alternating minimization method
 
     # Choose a dataset
-    DATA_FOLDERNAME = './data/bunny/bunny_lambert/'    # Lambertian diffuse with cast shadow
-    #DATA_FOLDERNAME = './data/bunny/bunny_lambert_noshadow/'    # Lambertian diffuse without cast shadow
+    #DATA_FOLDERNAME = './data/bunny/bunny_lambert/'    # Lambertian diffuse with cast shadow
+    DATA_FOLDERNAME = './data/bunny/bunny_lambert_noshadow/'    # Lambertian diffuse without cast shadow
 
     LIGHT_FILENAME = './data/bunny/lights.npy'
     MASK_FILENAME = './data/bunny/mask.png'
     GT_NORMAL_FILENAME = './data/bunny/gt_normal.npy'
 
-    np.random.seed(5)
+    np.random.seed(1)
     # Semi-calibrated photometric stereo
     scps = SCPS()
     scps.load_mask(filename=MASK_FILENAME)    # Load mask image
@@ -62,7 +62,6 @@ if __name__=='__main__':
 
     # Conventional photometric stereo with assuming that the light intensities are uniform (or calibrated)
     N = conventional_ps(scps.M, scps.L, scps.background_ind)
-
     start = time.time()
     scps.solve(METHOD)    # Compute
     elapsed_time = time.time() - start

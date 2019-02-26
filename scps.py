@@ -172,7 +172,7 @@ class SCPS(object):
         self.N = np.linalg.lstsq(self.E @ self.L, self.M, rcond=None)[0]
         # The above operation is almost equivalent to obtaining the solution from the null space
         # self.N[:, indices] = np.reshape(null_space[:self.SN_DIM*p], (p, self.SN_DIM)).T
-        # However, the null space method may be contaminated by attached shadows.
+        # However, the null space method may be contaminated by shadows.
         self.N[:, indices] = normalize(self.N[:, indices], axis=0)
         return
 
@@ -211,43 +211,6 @@ class SCPS(object):
         self.N[:, indices] = normalize(self.N[:, indices], axis=0)
         return
 
-    def _solve_factorization_orig(self):
-        """
-        Semi-calibrated photometric stereo
-        solution method based on factorization
-        """
-        self.N = np.zeros((self.SN_DIM, self.M.shape[1]))
-        if self.foreground_ind is None:
-            indices = range(self.M.shape[0])
-        else:
-            indices = self.foreground_ind
-        M = self.M[:, indices]
-        # Step 1 factorize (uncalibrated photometric stereo step)
-        f = M.shape[0]
-        u, s, vt = np.linalg.svd(M, full_matrices=False)
-        u = u[:, :self.SN_DIM]
-        s = s[:self.SN_DIM]
-        vt = vt[:self.SN_DIM, :]
-        S_hat = u @ np.diag(np.sqrt(s))
-        Bt_hat = np.diag(np.sqrt(s)) @ vt
-        # Step 2 solve for ambiguity H
-        A = np.zeros((2*f, self.SN_DIM * self.SN_DIM))
-        for i in range(f):
-            s = S_hat[i, :]
-            A[2 * i, :] = np.hstack([np.zeros(self.SN_DIM), -self.L[i, 2] * s, self.L[i, 1] * s])
-            A[2 * i + 1, :] = np.hstack([self.L[i, 2] * s, np.zeros(self.SN_DIM), -self.L[i, 0] * s])
-        u, s, vt = np.linalg.svd(A, full_matrices=False)
-        H = np.reshape(vt[-1, :], (self.SN_DIM, self.SN_DIM)).T
-        self.N[:, indices] = np.linalg.inv(H) @ Bt_hat
-        S_hat = S_hat @ H
-        self.N[:, indices] = normalize(self.N[:, indices], axis=0)
-        self.E = np.identity(f)
-        for i in range(f):
-            self.E[i, i] = np.linalg.norm(S_hat[i, :])
-        if np.mean(self.N[2, indices]) < 0.0:    # flip in case surface normal looks backward
-            self.N *= -1.0
-        return
-
     def _solve_alternate(self):
         """
         Semi-calibrated photometric stereo
@@ -282,4 +245,5 @@ class SCPS(object):
         self.N[:, indices] = normalize(N, axis=0)    # normalize N
         self.E = np.diag(self.E)     # convert to a diagonal matrix
         return
+
 
