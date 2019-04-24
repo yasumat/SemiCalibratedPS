@@ -77,7 +77,7 @@ if __name__=='__main__':
     print('Mean Angular Error (SCPS):', np.mean(angular_err))
     print('Mean Angular Error (Conventional):', np.mean(angular_err_conventional))
     plot_light_intensities(E_gt, np.diag(scps.E)/max(scps.E.ravel()))
-    #psutil.disp_normalmap(normal=scps.N.T, height=scps.height, width=scps.width, name='SCPS')
+    psutil.disp_normalmap(normal=scps.N.T, height=scps.height, width=scps.width, name='SCPS surface normal estimates')
     #psutil.disp_normalmap(normal=N.T, height=scps.height, width=scps.width, name='Conventional')
 
 
