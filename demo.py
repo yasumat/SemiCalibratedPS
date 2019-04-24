@@ -55,6 +55,7 @@ if __name__=='__main__':
     scps.load_mask(filename=MASK_FILENAME)    # Load mask image
     scps.load_lightnpy(filename=LIGHT_FILENAME)    # Load light matrix
     scps.load_npyimages(foldername=DATA_FOLDERNAME)    # Load observations
+    ########################################################################################
     # Give fluctuation to light intensities (equivalent to rescaling scps.M's row vectors)
     E_gt = np.random.rand(scps.M.shape[0])
     E_gt = E_gt / max(E_gt.ravel())
