@@ -19,7 +19,9 @@ varying lighting conditions, originally proposed by Woodham [1].
 
 Conventional Photometric Stereo assumes calibration of *both* light directions and intensities. 
 Semi-calibrated photometric stereo only assumes the known light directions, 
-but the light intensities (and camera exposures as well) are treated unknown.
+but the light intensities (and camera exposures as well) are treated unknown. The unknown light intensities are 
+simultaneously estimated together with surface normal. It eliminates the need for calibrating light intensities, and
+allows the use of auto-exposure of the camera without remembering the camera parameter, such as shutter-speed.
 
 ### How to use?
 
